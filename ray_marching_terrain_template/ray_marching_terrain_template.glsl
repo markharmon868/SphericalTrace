@@ -244,7 +244,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
 
     // use this to export the normalized step cost as an image
-    finalColor = vec3(normalizedStepCost);
+    // finalColor = vec3(normalizedStepCost);
 
     // You can also visualize it as a color gradient
     // finalColor = stepCountCostColor(normalizedStepCost);

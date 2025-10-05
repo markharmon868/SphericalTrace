@@ -53,16 +53,12 @@ float fbm(in vec2 uv, in int level)
     float value = 0.;
     float amplitude = 1.6;
     float freq = 1.0;
-    
     for (int i = 0; i < level; i++)
     {
         value += perlinNoise(uv * freq) * amplitude;
-        
         amplitude *= 0.4;
-        
         freq *= 2.0;
     }
-    
     return value;
 }
 
