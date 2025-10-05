@@ -48,13 +48,13 @@ float perlinNoise(vec2 P)
 }
 
 // Fractional Brownian Motion
-float fbm(in vec2 uv)
+float fbm(in vec2 uv, in int level)
 {
     float value = 0.;
     float amplitude = 1.6;
     float freq = 1.0;
     
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < level; i++)
     {
         value += perlinNoise(uv * freq) * amplitude;
         
@@ -66,10 +66,24 @@ float fbm(in vec2 uv)
     return value;
 }
 
-float terrainHeightMap(in vec3 uv)
+float terrainHeightMap(in vec3 uv, in float maxDistance)
 {
-    float height = fbm(uv.xz*0.5);
+    float distance = length(uv.xz); 
+    int fbmLevel = min(8, int(9.0 - 8.0*(distance / maxDistance)));
+    float height = fbm(uv.xz*0.5, fbmLevel);
     return height;
+}
+
+float determineK (in vec3 uv, float maxDistance) {
+    float distance = length(uv.xz); 
+    int fbmLevel = min(8, int(9.0 - 8.0*(distance / maxDistance)));
+    float G = 1.6;
+    float a0 = 1.6;
+    float f0 = 1.0;
+    float ai = 0.4;
+    float fi = 2.0;
+    float K = G * a0 * f0 * (1.0 - pow(ai * fi, float(fbmLevel))) / (1.0 - ai * fi);
+    return K;
 }
 
 
@@ -84,12 +98,12 @@ vec3 stepCountCostColor(float bias)
     return offset + amplitude*cos( PI2*(frequency*bias+phase));
 }
 
-vec3 getNormal(vec3 rayTerrainIntersection, float t)
+vec3 getNormal(vec3 rayTerrainIntersection, float t, float maxDistance)
 {
     vec3 eps = vec3(.001 * t, .0, .0);
-    vec3 n =vec3(terrainHeightMap(rayTerrainIntersection - eps.xyy) - terrainHeightMap(rayTerrainIntersection + eps.xyy),
+    vec3 n =vec3(terrainHeightMap(rayTerrainIntersection - eps.xyy, maxDistance) - terrainHeightMap(rayTerrainIntersection + eps.xyy, maxDistance),
                 2. * eps.x,
-                terrainHeightMap(rayTerrainIntersection - eps.yyx) - terrainHeightMap(rayTerrainIntersection + eps.yyx));
+                terrainHeightMap(rayTerrainIntersection - eps.yyx, maxDistance) - terrainHeightMap(rayTerrainIntersection + eps.yyx, maxDistance));
   
     return normalize(n);
 }

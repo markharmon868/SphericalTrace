@@ -15,6 +15,7 @@
 #iUniform float u_specular = 0.5 in {0.0, 1.0}  
 #iUniform float u_light_e_w = 1.0 in {-1.0, 1.0}  
 #iUniform float u_dolly = 0.0 in {0.0, 1.0}  
+#define eps 0.01
 
 
 vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, in float maxDistance, inout vec3 intPos)
@@ -24,8 +25,8 @@ vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
 	for( int i = 0; i < u_max_steps; i++ )
 	{
         vec3 pos = rayOrigin + intersectionDistance * rayDirection;
-		float height = pos.y - terrainHeightMap(pos);
-		if( abs(height) < (0.01 * intersectionDistance) || intersectionDistance > maxDistance ) 
+		float height = pos.y - terrainHeightMap(pos, maxDistance);
+		if(( abs(height) < (0.01 * intersectionDistance) || intersectionDistance > maxDistance ) || rayDirection.y > PI/50.0)
         {
             finalStepCount = float(i);
             intPos = pos;
@@ -35,6 +36,28 @@ vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
 	}
 
 	return vec2(intersectionDistance, finalStepCount);
+}
+
+vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, in float maxDistance, inout vec3 intPos){
+    float intersectionDistance = minDistance;
+    float finalStepCount = 1.0;
+    for( int i = 0; i < u_max_steps; i++ )
+    {
+        vec3 pos = rayOrigin + intersectionDistance * rayDirection;
+        float height = pos.y - terrainHeightMap(pos, maxDistance);
+        float K = determineK(pos, maxDistance);
+        float step = height / sqrt(1.0 + K*K);
+        if (((abs(height) < eps) || (intersectionDistance > maxDistance)) || rayDirection.y > PI / 50.0)
+        {
+            finalStepCount = float(i);
+            intPos = pos;
+            break;
+
+        }
+        intersectionDistance += step;
+    }
+
+    return vec2(intersectionDistance, finalStepCount);
 }
 
 vec3 computeShading(vec3 terrainColor, vec3 lightColor, vec3 normal, vec3 lightDirection, vec3 viewDirection, vec3 skyColor, float terrainHeight)
@@ -118,7 +141,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     if (intersectionDistance < u_max_distance)
     {
         vec3 rayTerrainIntersection = rayOrigin + rayDirection * intersectionDistance;
-        vec3 terrainNormal = getNormal(rayTerrainIntersection, intersectionDistance);
+        vec3 terrainNormal = getNormal(rayTerrainIntersection, intersectionDistance, u_max_distance);
         vec3 viewDirection = normalize(rayOrigin - rayTerrainIntersection);
         
         // lighting terrian
@@ -134,7 +157,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
 
     // use this to export the normalized step cost as an image
-    // finalColor = vec3(normalizedStepCost);
+    finalColor = vec3(normalizedStepCost);
 
     // You can also visualize it as a color gradient
     // finalColor = stepCountCostColor(normalizedStepCost);
