@@ -53,6 +53,13 @@ vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
 vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, in float maxDistance, inout vec3 intPos){
     float intersectionDistance = minDistance;
     float finalStepCount = 1.0;
+
+    // Track Illinois variables:
+    float tPrev   = intersectionDistance;
+    float rPrev   = residual(rayOrigin, rayDirection, tPrev, maxDistance);
+    bool  havePrev = false;
+
+
     for( int i = 0; i < u_max_steps; i++ )
     {
         vec3 pos = rayOrigin + intersectionDistance * rayDirection;
@@ -67,6 +74,58 @@ vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
             intPos = pos-(step/2.0)*rayDirection;
             break;
         }
+        
+        // Illinois method trigger
+        float illTrigger = 0.1 * (relDist + eps);
+        if (step < illTrigger|| height < illTrigger || height < 0.0)
+        {
+            // Try to synthesize a micro-bracket around current t
+            float beta = max(1e-3, 0.02 * intersectionDistance);
+            float a = clamp(intersectionDistance - beta, minDistance, maxDistance);
+            float b = clamp(intersectionDistance + beta, minDistance, maxDistance);
+
+            float ha = residual(rayOrigin, rayDirection, a, maxDistance);
+            float hb = residual(rayOrigin, rayDirection, b, maxDistance);
+
+            float surf_eps = relDist;
+            if (!(ha > 0.0 && hb <= 0.0)) {
+                    
+                // Expand once
+                float beta2 = 2.0 * beta;
+                a = clamp(intersectionDistance - beta2, minDistance, maxDistance);
+                b = clamp(intersectionDistance + beta2, minDistance, maxDistance);
+                ha = residual(rayOrigin, rayDirection, a, maxDistance);
+                hb = residual(rayOrigin, rayDirection, b, maxDistance);
+
+                if (!(ha > 0.0 && hb <= 0.0)) {
+                    // True peak skim: guarded secant jump forward, then continue marching
+                    float denom = max(abs(hb - ha), 1e-6);
+                    float d_sec = hb * (b - a) / denom; // distance from 'b' to zero of secant
+                    // Clamp to stay local and avoid micro-steps grind
+                    d_sec = clamp(d_sec, 2.0 * surf_eps, 10.0 * surf_eps);
+
+                    tPrev   = intersectionDistance;
+                    rPrev   = height;
+                    havePrev = true;
+
+                    intersectionDistance = min(intersectionDistance + d_sec, maxDistance);
+                    if (intersectionDistance > maxDistance) break;
+                    continue; // resume marching
+                }
+            }
+
+            // We have a bracket [a,b] with h(a)>0, h(b)<=0  -> refine & return hit
+            float thit = refineIllinois(rayOrigin, rayDirection, a, b, maxDistance);
+            intPos = rayOrigin + rayDirection * thit;
+            return vec2(thit, finalStepCount);
+        }
+
+        // --- Miss / far cutoff
+        if (intersectionDistance > maxDistance) {
+            intPos = rayOrigin + rayDirection * maxDistance;
+            break;
+        }
+
         // Normal step of my sphere trace
         if (((abs(height) < relDist+eps) || (intersectionDistance > maxDistance))|| hitPlane)
         {
@@ -78,15 +137,6 @@ vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
                 intersectionDistance = maxDistance + 1.0;
             }
             break;
-
-        }
-        // Illinois method trigger
-        float illTrigger = 0.1 * (relDist + eps);
-        if (step < illTrigger|| height < illTrigger || height < 0.0)
-        {
-            // intPrev = intersectionDistance;
-            // bool hit = tryRefine(rayOrigin, rayDirection, nearDist, farDist, intPrev, height, maxDistance, intPos,);
-            
 
         }
         intersectionDistance += step;
@@ -192,7 +242,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
 
     // use this to export the normalized step cost as an image
-    // finalColor = vec3(normalizedStepCost);
+    finalColor = vec3(normalizedStepCost);
 
     // You can also visualize it as a color gradient
     // finalColor = stepCountCostColor(normalizedStepCost);

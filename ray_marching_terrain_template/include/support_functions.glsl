@@ -77,7 +77,7 @@ float terrainHeightMap(in vec3 uv, in float maxDistance)
 float determineK (in vec3 uv, float maxDistance) {
     float distance = length(uv.xz); 
     int fbmLevel = min(8, int(9.0 - 8.0*(distance / maxDistance)));
-    float G = 1.6;
+    float G = 1.2;
     float a0 = 1.6;
     float f0 = 1.0;
     float ai = 0.4;
@@ -133,4 +133,78 @@ vec3 tosRGB(vec3 inputColor)
     inputColor.y = pow(inputColor.y, 1.0f/2.2f);
     inputColor.z = pow(inputColor.z, 1.0f/2.2f);
     return inputColor;
+}
+
+
+// Residual: positive when the ray point is ABOVE the terrain surface.
+float residual(in vec3 rayOrigin, in vec3 rayDirection, float t, float tMax) {
+    vec3 p = rayOrigin + rayDirection * t;
+    return p.y - terrainHeightMap(p, tMax);
+}
+
+// 3-iteration Illinois refinement on a bracket [a,b] with h(a)>0, h(b)<=0
+float refineIllinois(in vec3 rayOrigin, in vec3 rayDirection,
+                     float a, float b, float tMax)
+{
+    float fa = residual(rayOrigin, rayDirection, a, tMax);
+    float fb = residual(rayOrigin, rayDirection, b, tMax); // expected <= 0
+    int kept = 0; // +1 if 'a' kept last step, -1 if 'b' kept
+
+    // Do a few iterations—after sphere tracing, 3 is plenty
+    for (int k = 0; k < 3; ++k) {
+        float denom = (fb - fa);
+        // Secant (false-position) step, clamped to the bracket
+        float m  = b - fb * (b - a) / (abs(denom) > 1e-12 ? denom : (sign(denom)*1e-12));
+        m = clamp(m, min(a,b), max(a,b));
+        float fm = residual(rayOrigin, rayDirection, m, tMax);
+        if (abs(fm) < 1e-5) return m;
+
+        if (fm * fb < 0.0) { // root in [m, b]
+            a = b;  fa = fb;
+            b = m;  fb = fm;
+            if (kept == -1) fb *= 0.5; // Illinois damping on sticky side
+            kept = -1;
+        } else {             // root in [a, m]
+            b = m;  fb = fm;
+            if (kept == +1) fa *= 0.5;
+            kept = +1;
+        }
+    }
+    return 0.5 * (a + b);
+}
+bool tryRefine(vec3 ro, vec3 rd, float tNear, float tFar,
+               float tPrev, float rPrev,
+               inout float t, float tMax, float surf_eps)
+{
+    float r = residual(ro, rd, t, tMax);
+
+    // 1) Best case: sign flip -> bracket [tPrev, t]
+    if (rPrev > 0.0 && r <= 0.0) {
+        float thit = refineIllinois(ro, rd, tPrev, t, tMax);
+        t = thit;
+        return true;
+    }
+
+    // 2) Try to synthesize a micro-bracket around t
+    float beta = max(1e-3, 0.02 * t);
+    float a = clamp(t - beta, tNear, tFar);
+    float b = clamp(t + beta, tNear, tFar);
+    float ha = residual(ro, rd, a, tMax);
+    float hb = residual(ro, rd, b, tMax);
+
+    if (ha > 0.0 && hb <= 0.0) {
+        float thit = refineIllinois(ro, rd, a, b, tMax);
+        t = thit;
+        return true;
+    }
+
+    // 3) Still no bracket: do a guarded secant jump forward (peak skim case)
+    // Use the local secant between (a,ha) and (b,hb)
+    float denom = max(abs(hb - ha), 1e-6);
+    float d_sec = hb * (b - a) / denom;   // distance from 'b' to estimated root
+    // We want to move forward from t by a conservative amount; base it on local slope
+    d_sec = clamp(d_sec, 2.0*surf_eps, 10.0*surf_eps);
+
+    t = min(t + d_sec, tFar);
+    return false; // not a final hit; continue marching
 }
