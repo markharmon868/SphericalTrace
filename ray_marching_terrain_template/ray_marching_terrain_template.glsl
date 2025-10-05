@@ -17,6 +17,12 @@
 #iUniform float u_dolly = 0.0 in {0.0, 1.0}  
 #define eps 0.01
 
+bool intersectPlane (vec3 rayOrigin, vec3 rayDirection, float boxMax, float maxDistance)
+{
+    return rayOrigin.y + rayDirection.y * (maxDistance - length(rayOrigin)) > boxMax;
+}
+
+
 
 vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, in float maxDistance, inout vec3 intPos)
 {
@@ -26,10 +32,16 @@ vec2 rayMarching(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
 	{
         vec3 pos = rayOrigin + intersectionDistance * rayDirection;
 		float height = pos.y - terrainHeightMap(pos, maxDistance);
-		if(( abs(height) < (0.01 * intersectionDistance) || intersectionDistance > maxDistance ) || rayDirection.y > PI/50.0)
-        {
+        bool hitPlane = intersectPlane(rayOrigin, rayDirection, 2.7, maxDistance);
+		if(( abs(height) < (0.01 * intersectionDistance) || intersectionDistance > maxDistance ) || hitPlane){
             finalStepCount = float(i);
-            intPos = pos;
+            if (!hitPlane) {
+                intPos = pos;
+            } else {
+                intPos = rayDirection * maxDistance;
+                intersectionDistance = maxDistance + 1.0;
+            }
+            
             break;
         }
 		intersectionDistance += 0.2 * height;
@@ -47,11 +59,34 @@ vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
         float height = pos.y - terrainHeightMap(pos, maxDistance);
         float K = determineK(pos, maxDistance);
         float step = height / sqrt(1.0 + K*K);
-        if (((abs(height) < eps) || (intersectionDistance > maxDistance)) || rayDirection.y > PI / 50.0)
+        bool hitPlane = intersectPlane(rayOrigin, rayDirection, 2.7, maxDistance);
+        float relDist = 0.5*intersectionDistance / maxDistance;
+        // Overshot and approximate a fix
+        if (height < 0.0) {
+            finalStepCount = float(i);
+            intPos = pos-(step/2.0)*rayDirection;
+            break;
+        }
+        // Normal step of my sphere trace
+        if (((abs(height) < relDist+eps) || (intersectionDistance > maxDistance))|| hitPlane)
         {
             finalStepCount = float(i);
-            intPos = pos;
+            if (!hitPlane) {
+                intPos = pos;
+            } else {
+                intPos = rayOrigin + rayDirection * maxDistance;
+                intersectionDistance = maxDistance + 1.0;
+            }
             break;
+
+        }
+        // Illinois method trigger
+        float illTrigger = 0.1 * (relDist + eps);
+        if (step < illTrigger|| height < illTrigger || height < 0.0)
+        {
+            // intPrev = intersectionDistance;
+            // bool hit = tryRefine(rayOrigin, rayDirection, nearDist, farDist, intPrev, height, maxDistance, intPos,);
+            
 
         }
         intersectionDistance += step;
@@ -116,7 +151,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     
     vec3 intPos;
-    vec2 rayCollision = rayMarching(rayOrigin, rayDirection, 0.1, u_max_distance, intPos);
+    vec2 rayCollision = sphereTrace(rayOrigin, rayDirection, 0.1, u_max_distance, intPos);
     float intersectionDistance = rayCollision.x;
 
     float normalizedStepCost = rayCollision.y/float(u_max_steps);
@@ -157,12 +192,10 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
 
     // use this to export the normalized step cost as an image
-    finalColor = vec3(normalizedStepCost);
+    // finalColor = vec3(normalizedStepCost);
 
     // You can also visualize it as a color gradient
     // finalColor = stepCountCostColor(normalizedStepCost);
-
-    
 
     
     // convert back to sRGB (gamma correction)
