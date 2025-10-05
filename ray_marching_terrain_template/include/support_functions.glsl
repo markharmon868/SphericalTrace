@@ -144,7 +144,7 @@ float residual(in vec3 rayOrigin, in vec3 rayDirection, float t, float tMax) {
 
 // 3-iteration Illinois refinement on a bracket [a,b] with h(a)>0, h(b)<=0
 float refineIllinois(in vec3 rayOrigin, in vec3 rayDirection,
-                     float a, float b, float tMax)
+                     float a, float b, float tMax, out int ilIters)
 {
     float fa = residual(rayOrigin, rayDirection, a, tMax);
     float fb = residual(rayOrigin, rayDirection, b, tMax); // expected <= 0
@@ -152,6 +152,7 @@ float refineIllinois(in vec3 rayOrigin, in vec3 rayDirection,
 
     // Do a few iterations—after sphere tracing, 3 is plenty
     for (int k = 0; k < 3; ++k) {
+        ++ilIters;
         float denom = (fb - fa);
         // Secant (false-position) step, clamped to the bracket
         float m  = b - fb * (b - a) / (abs(denom) > 1e-12 ? denom : (sign(denom)*1e-12));
@@ -178,9 +179,10 @@ bool tryRefine(vec3 ro, vec3 rd, float tNear, float tFar,
 {
     float r = residual(ro, rd, t, tMax);
 
+    int illIters = 0;
     // 1) Best case: sign flip -> bracket [tPrev, t]
     if (rPrev > 0.0 && r <= 0.0) {
-        float thit = refineIllinois(ro, rd, tPrev, t, tMax);
+        float thit = refineIllinois(ro, rd, tPrev, t, tMax, illIters);
         t = thit;
         return true;
     }
@@ -193,7 +195,7 @@ bool tryRefine(vec3 ro, vec3 rd, float tNear, float tFar,
     float hb = residual(ro, rd, b, tMax);
 
     if (ha > 0.0 && hb <= 0.0) {
-        float thit = refineIllinois(ro, rd, a, b, tMax);
+        float thit = refineIllinois(ro, rd, a, b, tMax, illIters);
         t = thit;
         return true;
     }

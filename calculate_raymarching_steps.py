@@ -8,7 +8,7 @@ def sum_image_values(image_path, u_max_step):
     return np.sum(arr) / 255.0 * u_max_step
 
 if __name__ == "__main__":
-    path = "/Users/mark/Documents/Code/SphericalTrace/testImages/testray1048.png"
+    path = "/Users/mark/Documents/Code/SphericalTrace/testImages/test915.png"
 
     # Ask user for multiplier
     try:

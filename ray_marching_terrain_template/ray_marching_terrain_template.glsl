@@ -115,7 +115,9 @@ vec2 sphereTrace(in vec3 rayOrigin, in vec3 rayDirection, in float minDistance, 
             }
 
             // We have a bracket [a,b] with h(a)>0, h(b)<=0  -> refine & return hit
-            float thit = refineIllinois(rayOrigin, rayDirection, a, b, maxDistance);
+            int illIters = 0;
+            float thit = refineIllinois(rayOrigin, rayDirection, a, b, maxDistance, illIters);
+            finalStepCount += float(illIters);
             intPos = rayOrigin + rayDirection * thit;
             return vec2(thit, finalStepCount);
         }
